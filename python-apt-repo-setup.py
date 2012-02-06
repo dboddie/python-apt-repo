@@ -185,7 +185,7 @@ def update_tree(levels, parent_path, root_path = None, component = None, archite
         # When in the suite/distribution directory, write a Release file.
         write_suite_release(files, parent_path)
     
-    return files, packages
+    return packages, files
 
 def update_repo(path):
 
