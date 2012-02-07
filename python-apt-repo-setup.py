@@ -11,7 +11,7 @@ arch_Release_headings = [
     "Archive", "Component", "Label", "Origin", "Architecture", "Description"
     ]
 
-details = {"Architectures": ["amd64"],
+details = {"Architectures": ["amd64", "i386", "source"],
            "Codename": "lucid",
            "Suite": "lucid",
            "Components": ["experimental"],
@@ -21,8 +21,10 @@ details = {"Architectures": ["amd64"],
            "Description": "Experimental Debian and Ubuntu packages for the Norwegian Meteorological Institute"}
 
 hashes = [("MD5Sum", "md5sum"), ("SHA1", "sha1sum"), ("SHA256", "sha256sum")]
+checksums = {"Files": "md5sum", "Checksums-Sha1": "sha1sum", "Checksums-Sha256": "sha256sum"}
 
 Packages_compression = [("gz", gzip.GzipFile), ("bz2", bz2.BZ2File)]
+Sources_compression = [("gz", gzip.GzipFile), ("bz2", bz2.BZ2File)]
 
 def chdir(path):
 
@@ -91,15 +93,90 @@ def catalogue_packages(path, root_path, component, architecture):
     
     Packages_file.close()
     
+    compressed_files = compress_files(Packages_path, Packages_compression)
+    
+    Release_path = write_component_release(path, component, architecture)
+    
+    return packages, [Packages_path, Release_path] + compressed_files
+
+def catalogue_sources(path, root_path, component):
+
+    Sources_path = os.path.join(path, "Sources")
+    Sources_file = open(Sources_path, "w")
+    sources = glob.glob(os.path.join(path, "*", "*"+os.extsep+"dsc"))
+    
+    for source in sources:
+    
+        print source
+        info = read_dsc_file(source)
+        if not info:
+            continue
+        
+        Source_line = filter(lambda x: x.startswith("Source: "), info)[0]
+        Sources_file.write("Package: " + Source_line[8:])
+        
+        for line in info:
+        
+            if line.startswith("Source: "):
+                continue
+            
+            Sources_file.write(line)
+            
+            if not line.startswith(" ") and ":" in line:
+            
+                try:
+                    command = checksums[line.split(":")[0]]
+                except KeyError:
+                    continue
+                
+                s = subprocess.Popen([command, source], stdout=subprocess.PIPE)
+                result = s.stdout.read().strip().split()[0]
+                size = os.stat(source)[stat.ST_SIZE]
+                file_name = os.path.split(source)[1]
+                
+                Sources_file.write(" %s %i %s\n" % (result, size, file_name))
+    
+    Sources_file.close()
+    
+    compressed_files = compress_files(Sources_path, Sources_compression)
+    
+    Release_path = write_component_release(path, component, "source")
+    
+    return sources, [Sources_path, Release_path] + compressed_files
+
+def read_dsc_file(path):
+
+    f = open(path)
+    first_line = f.readline()
+    if first_line.startswith("-----BEGIN PGP SIGNED MESSAGE-----"):
+    
+        f.close()
+        s = subprocess.Popen(["gpg", "--decrypt", path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        lines = s.stdout.readlines()
+        if s.wait() != 0:
+            sys.stderr.write("Problem with file: %s\n" % path)
+            for line in s.stderr.readlines():
+                sys.stderr.write("  "+line)
+    else:
+        lines = [first_line] + f.readlines()
+    
+    return lines
+
+def compress_files(path, compression_types):
+
     compressed_files = []
     
-    for ext, Class in Packages_compression:
+    for ext, Class in compression_types:
     
-        obj = Class(Packages_path + os.extsep + ext, "w")
-        obj.write(open(Packages_path).read())
+        obj = Class(path + os.extsep + ext, "w")
+        obj.write(open(path).read())
         obj.close()
-        compressed_files.append(Packages_path + os.extsep + ext)
+        compressed_files.append(path + os.extsep + ext)
     
+    return compressed_files
+
+def write_component_release(path, component, architecture):
+
     Release_path = os.path.join(path, "Release")
     Release_file = open(Release_path, "w")
     
@@ -111,7 +188,7 @@ def catalogue_packages(path, root_path, component, architecture):
     for heading in arch_Release_headings:
         Release_file.write(heading + ": " + arch_details[heading] + "\n")
     
-    return packages, [Packages_path, Release_path] + compressed_files
+    return Release_path
 
 def write_suite_release(files, path):
 
@@ -150,8 +227,11 @@ def update_tree(levels, parent_path, root_path = None, component = None, archite
 
     if not levels:
         # In each architecture directory, catalogue all the section subdirectories.
-        ### In the source directory, this should catalogue the sources for the section instead.
-        return catalogue_packages(parent_path, root_path, component, architecture)
+        # In the source directory, catalogue the sources for the section instead.
+        if architecture == "source":
+            return catalogue_sources(parent_path, root_path, component)
+        else:
+            return catalogue_packages(parent_path, root_path, component, architecture)
     
     elif len(levels) == 5:
         root_path = levels[0]
