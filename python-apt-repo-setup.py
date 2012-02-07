@@ -107,7 +107,6 @@ def catalogue_sources(path, root_path, component):
     
     for source in sources:
     
-        print source
         info = read_dsc_file(source)
         if not info:
             continue
