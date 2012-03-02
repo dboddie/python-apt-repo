@@ -239,8 +239,19 @@ def mkdirs(pieces):
 
 def copy_file(src_path, dest_path):
 
+    if os.path.exists(dest_path) or os.path.islink(dest_path):
+        print "Removing", dest_path
+        os.remove(dest_path)
     print "Copying", src_path, "to", dest_path
     shutil.copy2(src_path, dest_path)
+
+def link_file(src_path, dest_path):
+
+    if os.path.exists(dest_path) or os.path.islink(dest_path):
+        print "Removing", dest_path
+        os.remove(dest_path)
+    print "Linking", src_path, "to", dest_path
+    os.symlink(src_path, dest_path)
 
 def catalogue_packages(path, root_path, component, architecture):
 
@@ -394,7 +405,7 @@ def find_files(path, FileClass):
         elif obj_path.endswith(FileClass.suffix):
             yield FileClass(obj_path)
 
-def add_package(package, path):
+def add_package(package, path, link = False):
 
     architecture = package.architecture()
     section = package.section()
@@ -402,9 +413,12 @@ def add_package(package, path):
     dest_dir = os.path.join(path, "binary-" + architecture, section)
     mkdirs([path, "binary-" + architecture, section])
     dest_path = os.path.join(dest_dir, package.file_name)
-    copy_file(package.path, dest_path)
+    if link:
+        link_file(package.path, dest_path)
+    else:
+        copy_file(package.path, dest_path)
 
-def add_source(source, path):
+def add_source(source, path, link = False):
 
     section = source.find_section(path)
     
@@ -438,25 +452,31 @@ def add_source(source, path):
     
     # Copy the .dsc file.
     dest_path = os.path.join(dest_dir, source.file_name)
-    copy_file(source.path, dest_path)
+    if link:
+        link_file(source.path, dest_path)
+    else:
+        copy_file(source.path, dest_path)
     
     # Copy the original archive.
-    copy_file(orig_path, os.path.join(dest_dir, orig_name))
+    if link:
+        link_file(orig_path, os.path.join(dest_dir, orig_name))
+    else:
+        copy_file(orig_path, os.path.join(dest_dir, orig_name))
     
     # Copy the diff archive, if present.
-    copy_file(diff_path, os.path.join(dest_dir, diff_name))
+    if link:
+        link_file(diff_path, os.path.join(dest_dir, diff_name))
+    else:
+        copy_file(diff_path, os.path.join(dest_dir, diff_name))
 
-def add_packages_and_sources(path, dir_paths):
+def add_packages_and_sources(path, dir_paths, link = False):
 
-    packages = []
-    sources = []
-    
     for dir_path in dir_paths:
     
         for package in find_files(dir_path, Package):
-            add_package(package, path)
+            add_package(package, path, link)
         for source in find_files(dir_path, Source):
-            add_source(source, path)
+            add_source(source, path, link)
     
     return 0
 
@@ -541,7 +561,7 @@ def sign_repo(root_path, suites):
     return 0
 
 create_syntax = "create <repository root directory> <suites> <components>"
-add_syntax = "add <repository root directory> <component> <package or source directory> ..."
+add_syntax = "add <repository root directory> <component> [--link] <package or source directory> ..."
 update_syntax = "update <repository root directory>"
 sign_syntax = "sign <repository root directory> <suites>"
 
@@ -572,7 +592,10 @@ if __name__ == "__main__":
                 sys.stderr.write("Usage: %s %s\n" % (sys.argv[0], add_syntax))
                 sys.exit(1)
             
-            sys.exit(add_packages_and_sources(sys.argv[2], sys.argv[3:]))
+            if sys.argv[3] == "--link":
+                sys.exit(add_packages_and_sources(sys.argv[2], sys.argv[4:], True))
+            else:
+                sys.exit(add_packages_and_sources(sys.argv[2], sys.argv[3:], False))
         
         elif command == "update":
             if len(sys.argv) != 3:
