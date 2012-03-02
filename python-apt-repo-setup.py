@@ -379,6 +379,7 @@ def create_repo(path, suites, components):
     mkdir(path)
     
     create_tree(["dists", suites, components], path)
+    return 0
 
 # Add packages and sources
 
@@ -456,6 +457,8 @@ def add_packages_and_sources(path, dir_paths):
             add_package(package, path)
         for source in find_files(dir_path, Source):
             add_source(source, path)
+    
+    return 0
 
 # Update repository
 
@@ -508,11 +511,46 @@ def update_repo(path):
     # Catalogue the packages themselves.
     origin = os.path.split(os.path.abspath(path))[1]
     update_tree([origin], path)
+    return 0
 
+def sign_repo(root_path, suites):
+
+    for suite in suites:
+    
+        path = os.path.join(root_path, "dists", suite)
+        Release_path = os.path.join(path, "Release")
+        Release_gpg_path = Release_path + ".gpg"
+        
+        if os.path.exists(Release_path):
+        
+            if os.path.exists(Release_gpg_path):
+                os.remove(Release_gpg_path)
+                
+            s = subprocess.Popen(["gpg", "-a", "-b", "--sign", "-o",
+                                  Release_gpg_path, Release_path],
+                                  stderr=subprocess.PIPE)
+            if s.wait() != 0:
+                sys.stderr.write("Problem with file: %s\n" % self.path)
+                for line in s.stderr.readlines():
+                    sys.stderr.write("  "+line)
+                    return 1
+        else:
+            sys.stderr.write("Release file not found: %s\n" % Release_path)
+            return 1
+    
+    return 0
 
 create_syntax = "create <repository root directory> <suites> <components>"
-add_syntax = "add <component root directory> <package or source directory> ..."
+add_syntax = "add <repository root directory> <component> <package or source directory> ..."
 update_syntax = "update <repository root directory>"
+sign_syntax = "sign <repository root directory> <suites>"
+
+general_help = (
+    "    <suites> is a comma-separated list of releases. "
+    "For example: hardy,lucid,precise\n"
+    "    <components> is a comma-separated list of components. "
+    "For example: main,universe,contrib\n\n"
+    )
 
 if __name__ == "__main__":
 
@@ -543,8 +581,19 @@ if __name__ == "__main__":
             
             sys.exit(update_repo(sys.argv[2]))
     
-    sys.stderr.write("Usage: %s %s\n" % (sys.argv[0], create_syntax))
-    sys.stderr.write("       %s %s\n" % (sys.argv[0], add_syntax))
-    sys.stderr.write("       %s %s\n" % (sys.argv[0], update_syntax))
+        elif command == "sign":
+            if len(sys.argv) != 4:
+                sys.stderr.write("Usage: %s %s\n" % (sys.argv[0], sign_syntax))
+                sys.exit(1)
+            
+            suites = sys.argv[3].split(",")
+            sys.exit(sign_repo(sys.argv[2], suites))
+    
+    this_file = os.path.split(sys.argv[0])[1]
+    sys.stderr.write("Usage: %s %s\n" % (this_file, create_syntax))
+    sys.stderr.write("       %s %s\n" % (this_file, add_syntax))
+    sys.stderr.write("       %s %s\n" % (this_file, update_syntax))
+    sys.stderr.write("       %s %s\n" % (this_file, sign_syntax))
+    sys.stderr.write("\n" + general_help)
     sys.exit(1)
 
