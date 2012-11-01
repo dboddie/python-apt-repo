@@ -563,7 +563,7 @@ def sign_repo(root_path, suites):
     return 0
 
 create_syntax = "create <repository root directory> <suites> <components>"
-add_syntax = "add <repository root directory> <component> [--link] <package or source directory> ..."
+add_syntax = "add <repository component directory> [--link] <package or source directory> ..."
 update_syntax = "update <repository root directory>"
 sign_syntax = "sign <repository root directory> <suites>"
 
