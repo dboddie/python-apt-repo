@@ -348,8 +348,10 @@ def write_suite_release(files, path):
     
     sizes = {}
     for file_path in files:
-    
         sizes[file_path] = os.stat(file_path)[stat.ST_SIZE]
+    
+    if not sizes:
+       return
     
     max_size = max(sizes.values())
     max_size_length = len(str(max_size))
