@@ -251,7 +251,8 @@ def link_file(src_path, dest_path):
         print "Removing", dest_path
         os.remove(dest_path)
     print "Linking", src_path, "to", dest_path
-    os.symlink(src_path, dest_path)
+    os.symlink(os.path.abspath(src_path),
+               os.path.abspath(dest_path))
 
 def catalogue_packages(path, root_path, component, architecture):
 
