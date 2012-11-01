@@ -284,9 +284,10 @@ def catalogue_packages(path, root_path, component, architecture):
     
     compressed_files = compress_files(Packages_path, Packages_compression)
     
-    Release_path = write_component_release(path, component, architecture)
+    suite = path.split(os.sep)[-3]
+    Release_path = write_component_release(path, suite, component, architecture)
     
-    return packages, [Packages_path, Release_path] + compressed_files
+    return packages, [Packages_path, Release_path] + compressed_files, [architecture.replace("binary-", "")]
 
 def catalogue_sources(path, root_path, component):
 
@@ -303,9 +304,10 @@ def catalogue_sources(path, root_path, component):
     
     compressed_files = compress_files(Sources_path, Sources_compression)
     
-    Release_path = write_component_release(path, component, "source")
+    suite = path.split(os.sep)[-3]
+    Release_path = write_component_release(path, suite, component, "source")
     
-    return sources, [Sources_path, Release_path] + compressed_files
+    return sources, [Sources_path, Release_path] + compressed_files, ["source"]
 
 def compress_files(path, compression_types):
 
@@ -320,13 +322,13 @@ def compress_files(path, compression_types):
     
     return compressed_files
 
-def write_component_release(path, component, architecture):
+def write_component_release(path, suite, component, architecture):
 
     Release_path = os.path.join(path, "Release")
     Release_file = open(Release_path, "w")
     
     arch_details = details.copy()
-    arch_details["Archive"] = details["Suite"]
+    arch_details["Archive"] = suite
     arch_details["Component"] = component
     arch_details["Architecture"] = architecture
     
@@ -335,13 +337,19 @@ def write_component_release(path, component, architecture):
     
     return Release_path
 
-def write_suite_release(files, path):
+def write_suite_release(files, path, suite, components, architectures):
 
     Release_file = open(os.path.join(path, "Release"), "w")
     
+    suite_details = details.copy()
+    suite_details["Suite"] = suite
+    suite_details["Codename"] = suite
+    suite_details["Components"] = components
+    suite_details["Architectures"] = architectures
+    
     for heading in suite_Release_headings:
     
-        value = details[heading]
+        value = suite_details[heading]
         if not isinstance(value, str):
             value = " ".join(value)
         
@@ -502,6 +510,8 @@ def update_tree(levels, parent_path, root_path = None, component = None, archite
     
     files = []
     packages = []
+    architectures = []
+    components = []
     
     for subdir in subdirs:
     
@@ -518,16 +528,19 @@ def update_tree(levels, parent_path, root_path = None, component = None, archite
             # In the suite level, the subdirectories represent components.
             component = subdir
         
-        new_packages, new_files = update_tree(levels + [subdir], child_path, root_path, component, architecture)
+        new_packages, new_files, new_archs = update_tree(levels + [subdir], child_path, root_path, component, architecture)
         packages += new_packages
         files += new_files
+        architectures += new_archs
+        components.append(component)
     
     if len(levels) == 3:
     
         # When in the suite/distribution directory, write a Release file.
-        write_suite_release(files, parent_path)
+        suite = os.path.split(parent_path)[1]
+        write_suite_release(files, parent_path, suite, components, architectures)
     
-    return packages, files
+    return packages, files, architectures
 
 def update_repo(path):
 

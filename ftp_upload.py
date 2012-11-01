@@ -8,10 +8,12 @@ def upload(repo_path, host, user, remote_path):
     ftp.login(user, getpass.getpass())
     ftp.cwd("/")
     
-    path = "/"
+    path = ""
     for piece in remote_path.split("/"):
-        path += piece
-        if not ftp.nslt(piece):
+        if not piece:
+            continue
+        path += "/" + piece
+        if piece not in ftp.nlst():
             print "Creating remote directory:", path
             ftp.mkd(piece)
 
@@ -19,7 +21,7 @@ def upload(repo_path, host, user, remote_path):
         ftp.cwd(piece)
     
     upload_files(repo_path, ftp)
-    f.quit()
+    ftp.quit()
 
 def upload_files(path, ftp):
 
@@ -33,7 +35,7 @@ def upload_files(path, ftp):
             f.close()
 
         elif os.path.isdir(child_path):
-            if not ftp.nlst(child):
+            if child not in ftp.nlst():
                 print "Creating remote directory:", path
                 ftp.mkd(child)
 
