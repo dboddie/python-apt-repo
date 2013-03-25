@@ -200,6 +200,7 @@ class Source:
             packages = glob.glob(search_path)
             
             if not packages:
+                sys.stderr.write("Failed to find packages for binary: " + binary)
                 continue
             
             section_dir_path = os.path.split(packages[0])[0]
@@ -254,29 +255,51 @@ def link_file(src_path, dest_path):
     os.symlink(os.path.abspath(src_path),
                os.path.abspath(dest_path))
 
-def catalogue_packages(path, root_path, component, architecture):
+def subdirectories(path):
 
-    Packages_path = os.path.join(path, "Packages")
-    Packages_file = open(Packages_path, "w")
+    for child in os.listdir(path):
+        child_path = os.path.join(path, child)
+        if os.path.isdir(child_path):
+            yield child_path
+
+def catalogue_packages(path, root_path):
+
     packages = glob.glob(os.path.join(path, "*", "*.deb"))
+    package_info_list = []
     
     for package in packages:
     
+        info = {}
+        
         s = subprocess.Popen(["dpkg-deb", "-I", package, "control"], stdout=subprocess.PIPE)
-        info = s.stdout.read()
-        Packages_file.write(info)
+        info["control"] = s.stdout.read()
         
         pieces = package.split(os.sep)
-        Packages_file.write("Filename: " + os.sep.join(pieces[-6:]) + "\n")
+        info["filename"] = "Filename: " + os.sep.join(pieces[-6:]) + "\n"
         
         size = os.stat(package)[stat.ST_SIZE]
-        Packages_file.write("Size: %i\n" % size)
+        info["size"] = "Size: %i\n" % size
         
+        info["hashes"] = ""
         for name, command in hashes:
         
             s = subprocess.Popen([command, package], stdout=subprocess.PIPE)
             result = s.stdout.read().strip().split()[0]
-            Packages_file.write(name + ": " + result + "\n")
+            info["hashes"] += name + ": " + result + "\n"
+        
+        package_info_list.append(info)
+    
+    return packages, package_info_list
+
+def write_catalogue_package_file(component, architecture, path, package_info_list):
+
+    Packages_path = os.path.join(path, "Packages")
+    Packages_file = open(Packages_path, "w")
+    
+    for info in package_info_list:
+    
+        for key in "control", "filename", "size", "hashes":
+            Packages_file.write(info[key])
         
         Packages_file.write("\n")
     
@@ -287,7 +310,7 @@ def catalogue_packages(path, root_path, component, architecture):
     suite = path.split(os.sep)[-3]
     Release_path = write_component_release(path, suite, component, architecture)
     
-    return packages, [Packages_path, Release_path] + compressed_files, [architecture.replace("binary-", "")]
+    return [Packages_path, Release_path] + compressed_files
 
 def catalogue_sources(path, root_path, component):
 
@@ -495,15 +518,7 @@ def add_packages_and_sources(path, dir_paths, link = False):
 
 def update_tree(levels, parent_path, root_path = None, component = None, architecture = None):
 
-    if len(levels) == 5:
-        # In each architecture directory, catalogue all the section subdirectories.
-        # In the source directory, catalogue the sources for the section instead.
-        if architecture == "source":
-            return catalogue_sources(parent_path, root_path, component)
-        else:
-            return catalogue_packages(parent_path, root_path, component, architecture)
-    
-    elif len(levels) == 0:
+    if len(levels) == 0:
         root_path = parent_path
     
     subdirs = os.listdir(parent_path)
@@ -513,32 +528,61 @@ def update_tree(levels, parent_path, root_path = None, component = None, archite
     architectures = []
     components = []
     
-    for subdir in subdirs:
-    
-        child_path = os.path.join(parent_path, subdir)
-        if not os.path.isdir(child_path):
-            continue
+    if len(levels) == 4:
+
+        info_dict = {}
         
-        if len(levels) == 4:
-            # In the component level, the subdirectories represent architectures.
-            architecture = subdir
-            if subdir != "source":
-                subdir = subdir.split("-")[1]
-        elif len(levels) == 3:
-            # In the suite level, the subdirectories represent components.
-            component = subdir
+        # In the component level, the subdirectories represent architectures.
+        if "source" in subdirs and os.path.isdir(os.path.join(parent_path, "source")):
+            packages, files, architectures = catalogue_sources(os.path.join(parent_path, "source"), root_path, component)
+            subdirs.remove("source")
         
-        new_packages, new_files, new_archs = update_tree(levels + [subdir], child_path, root_path, component, architecture)
-        packages += new_packages
-        files += new_files
-        architectures += new_archs
-        components.append(component)
+        for subdir in subdirs:
+        
+            child_path = os.path.join(parent_path, subdir)
+            if not os.path.isdir(child_path):
+                continue
+            
+            architecture = subdir.replace("binary-", "")
+            
+            # In each architecture directory, catalogue all the section subdirectories.
+            # In the source directory, catalogue the sources for the section instead.
+            new_packages, new_info = catalogue_packages(child_path, root_path)
+            
+            packages += new_packages
+            info_dict[architecture] = (child_path, new_info)
+        
+        # Write the package files.
+        for architecture, (path, package_info_list) in info_dict.items():
+        
+            # Add the all entries to each of the package files for the architectures.
+            if architecture != "all" and "all" in info_dict:
+                files += write_catalogue_package_file(component, architecture, path, package_info_list + info_dict["all"][1])
+            else:
+                files += write_catalogue_package_file(component, architecture, path, package_info_list)
     
-    if len(levels) == 3:
-    
-        # When in the suite/distribution directory, write a Release file.
-        suite = os.path.split(parent_path)[1]
-        write_suite_release(files, parent_path, suite, components, architectures)
+    else:
+        for subdir in subdirs:
+        
+            child_path = os.path.join(parent_path, subdir)
+            if not os.path.isdir(child_path):
+                continue
+            
+            elif len(levels) == 3:
+                # In the suite level, the subdirectories represent components.
+                component = subdir
+            
+            new_packages, new_files, new_archs = update_tree(levels + [subdir], child_path, root_path, component, architecture)
+            packages += new_packages
+            files += new_files
+            architectures += new_archs
+            components.append(component)
+        
+        if len(levels) == 3:
+        
+            # When in the suite/distribution directory, write a Release file.
+            suite = os.path.split(parent_path)[1]
+            write_suite_release(files, parent_path, suite, components, architectures)
     
     return packages, files, architectures
 
@@ -566,7 +610,7 @@ def sign_repo(root_path, suites):
                                   Release_gpg_path, Release_path],
                                   stderr=subprocess.PIPE)
             if s.wait() != 0:
-                sys.stderr.write("Problem with file: %s\n" % self.path)
+                sys.stderr.write("Problem with file: %s\n" % Release_path)
                 for line in s.stderr.readlines():
                     sys.stderr.write("  "+line)
                     return 1
