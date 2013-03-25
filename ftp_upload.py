@@ -20,10 +20,10 @@ def upload(repo_path, host, user, remote_path):
         print "Entering remote directory:", path
         ftp.cwd(piece)
     
-    upload_files(repo_path, ftp)
+    upload_files(remote_path, repo_path, ftp)
     ftp.quit()
 
-def upload_files(path, ftp):
+def upload_files(remote_path, path, ftp):
 
     for child in os.listdir(path):
     
@@ -36,12 +36,12 @@ def upload_files(path, ftp):
 
         elif os.path.isdir(child_path):
             if child not in ftp.nlst():
-                print "Creating remote directory:", path
+                print "Creating remote directory:", remote_path+"/"+child
                 ftp.mkd(child)
 
-            print "Entering remote directory:", path
+            print "Entering remote directory:", remote_path+"/"+child
             ftp.cwd(child)
-            upload_files(child_path, ftp)
+            upload_files(remote_path+"/"+child, child_path, ftp)
             ftp.cwd("..")
 
 
