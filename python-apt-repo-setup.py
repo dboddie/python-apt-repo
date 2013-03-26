@@ -200,7 +200,7 @@ class Source:
             packages = glob.glob(search_path)
             
             if not packages:
-                sys.stderr.write("Failed to find packages for binary: " + binary)
+                sys.stderr.write("Failed to find packages for binary: %s\n" % binary)
                 continue
             
             section_dir_path = os.path.split(packages[0])[0]
@@ -521,6 +521,8 @@ def update_tree(levels, parent_path, root_path = None, component = None, archite
     if len(levels) == 0:
         root_path = parent_path
     
+    print "Entering", parent_path
+    
     subdirs = os.listdir(parent_path)
     
     files = []
@@ -533,8 +535,10 @@ def update_tree(levels, parent_path, root_path = None, component = None, archite
         info_dict = {}
         
         # In the component level, the subdirectories represent architectures.
-        if "source" in subdirs and os.path.isdir(os.path.join(parent_path, "source")):
-            packages, files, architectures = catalogue_sources(os.path.join(parent_path, "source"), root_path, component)
+        child_path = os.path.join(parent_path, "source")
+        if "source" in subdirs and os.path.isdir(child_path):
+            print "Entering", child_path
+            packages, files, architectures = catalogue_sources(child_path, root_path, component)
             subdirs.remove("source")
         
         for subdir in subdirs:
@@ -543,6 +547,7 @@ def update_tree(levels, parent_path, root_path = None, component = None, archite
             if not os.path.isdir(child_path):
                 continue
             
+            print "Entering", child_path
             architecture = subdir.replace("binary-", "")
             
             # In each architecture directory, catalogue all the section subdirectories.
