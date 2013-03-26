@@ -33,11 +33,25 @@ def upload_files(remote_path, path, ftp, check_size = False):
 
         if os.path.isfile(child_path):
         
+            # Always copy Release*, Packages* and Sources* files.
             copy = True
-            local_size = os.stat(child_path)[stat.ST_SIZE]
-
-            if check_size and child in remote_files:
             
+            if child.startswith("Release"):
+                copy = True
+            
+            elif child.startswith("Packages"):
+                copy = True
+            
+            elif child.startswith("Sources"):
+                copy = True
+            
+            elif check_size and child in remote_files:
+            
+                # Copy files if required to, or if the remote size differs
+                # from the local size. Ideally, we should also compare the
+                # file hashes.
+                local_size = os.stat(child_path)[stat.ST_SIZE]
+                
                 ftp.sendcmd("TYPE I")
                 remote_size = ftp.size(child)
                 ftp.sendcmd("TYPE A")
