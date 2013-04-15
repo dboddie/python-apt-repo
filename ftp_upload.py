@@ -60,6 +60,7 @@ def upload_files(remote_path, path, ftp, check_size = False):
                     copy = False
             
             if copy:
+                print "Copying", child_path
                 f = open(child_path, "rb")
                 ftp.storbinary("STOR " + child, f)
                 f.close()
@@ -83,7 +84,7 @@ if __name__ == "__main__":
         args.remove("-f")
     
     if len(args) != 5:
-        sys.stderr.write("Usage: %s <repository path> <FTP server> <user name> <remote path>\n" % args)
+        sys.stderr.write("Usage: %s <repository path> <FTP server> <user name> <remote path>\n" % args[0])
         sys.exit(1)
 
     repo_path, host, user, remote_path = args[1:]

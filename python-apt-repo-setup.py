@@ -2,6 +2,8 @@
 
 import bz2, gzip, glob, os, shutil, stat, subprocess, sys, time
 
+__version__ = "0.1.0"
+
 suite_Release_headings = [
     "Architectures", "Codename", "Components", "Date", "Label", "Origin",
     "Suite", "Description"
@@ -26,22 +28,97 @@ checksums = {"Files": "md5sum", "Checksums-Sha1": "sha1sum", "Checksums-Sha256":
 Packages_compression = [("gz", gzip.GzipFile), ("bz2", bz2.BZ2File)]
 Sources_compression = [("gz", gzip.GzipFile), ("bz2", bz2.BZ2File)]
 
-class Package:
+class PackageFile:
+
+    def _read_entry(self, lines):
+
+        previous = None
+        info = {}
+        headings = []
+        kept_lines = []
+        
+        for line in lines:
+        
+            # Keep each line for situations where the source text is required.
+            kept_lines.append(line)
+            
+            if not line.strip():
+                if info:
+                    yield info, headings, kept_lines
+                    info = {}
+                    headings = []
+                    kept_lines = []
+                else:
+                    continue
+            
+            elif not line.startswith(" "):
+                at = line.find(":")
+                heading = line[:at]
+                value = line[at+1:].strip()
+                if value == "":
+                    info[heading] = []
+                else:
+                    info[heading] = value
+                
+                previous = heading
+                if heading not in headings:
+                    headings.append(heading)
+            
+            elif previous:
+                if isinstance(info[previous], list):
+                    info[previous].append(line.strip())
+                else:
+                    info[previous] += line.rstrip()
+        
+        if info:
+            yield info, headings, kept_lines
+
+class Package(PackageFile):
 
     suffix = ".deb"
     
-    def __init__(self, path):
+    def __init__(self, path = None, info = None):
     
         self.path = path
-        self.file_name = os.path.split(path)[1]
-        self._has_info = False
-        self._info = {}
+        
+        if info:
+            self._has_info = True
+            self._info = info
+        else:
+            self._has_info = False
+            self._info = {}
+        
+        if path:
+        
+            # The file name includes everything in the path from the repository root.
+            # dists/<suite>/<component>/<architecture>/<section>/<file name>
+            self._info["Filename"] = "/".join(path.split(os.sep)[-6:])
+            
+            size = os.stat(path)[stat.ST_SIZE]
+            self._info["Size"] = size
+            
+            for name, command in hashes:
+            
+                s = subprocess.Popen([command, path], stdout=subprocess.PIPE)
+                result = s.stdout.read().strip().split()[0]
+                self._info[name] = result
+        
+        self._headings = []
         self.lines = []
     
     def __repr__(self):
     
         self._get_info()
-        return "<Package %s>" % self.path
+        if self.path:
+            return "<Package %s>" % self.path
+        else:
+            self._get_info()
+            return "<Package %s>" % str(self._info)
+    
+    def __getitem__(self, key):
+    
+        self._get_info()
+        return self._info[key]
     
     def _get_info(self):
     
@@ -50,25 +127,12 @@ class Package:
         
         s = subprocess.Popen(["dpkg-deb", "-I", self.path, "control"], stdout=subprocess.PIPE)
         
-        previous = None
-        for line in s.stdout.readlines():
+        for info, headings, lines in self._read_entry(s.stdout.readlines()):
         
-            # Keep each line for situations where the source text is required.
-            self.lines.append(line)
-            
-            if line == "\n":
-                pass
-            
-            elif not line.startswith(" "):
-                at = line.find(":")
-                heading = line[:at]
-                self._info[heading] = line[at+1:].strip()
-                previous = heading
-            
-            elif previous:
-                self._info[previous] += line.rstrip()
-        
-        self._has_info = True
+            self._info.update(info)
+            self._headings = headings
+            self.lines += lines
+            self._has_info = True
     
     def architecture(self):
     
@@ -79,8 +143,68 @@ class Package:
     
         self._get_info()
         return self._info["Section"]
+    
+    def packages_text(self):
+    
+        self._get_info()
+        
+        text = "".join(self.lines)
+        headings = ("Filename", "Size") + zip(*hashes)[0]
+        
+        for key in headings:
+            text += key + ": " + str(self._info[key]) + "\n"
+        
+        return text
 
-class Source:
+class Packages(PackageFile):
+
+    def __init__(self, path):
+    
+        self.path = path
+        self.repo_path = os.sep.join(self.path.split(os.sep)[:-5])
+        self.packages = {}
+        self.lines = []
+    
+    def add_package(self, package):
+    
+        self.packages[package["Package"]] = package
+    
+    def read(self):
+    
+        self.packages = {}
+        self.lines = []
+        
+        for info, headings, lines in self._read_entry(open(self.path).readlines()):
+        
+            try:
+                file_name = info["Filename"]
+            except KeyError:
+                if info.has_key("Package"):
+                    sys.stderr.write("Failed to find a file name for package: %s\n" % info["Package"])
+            
+            path = os.path.join(self.repo_path, file_name)
+            self.add_package(Package(path = path))
+            
+            self.lines += lines
+    
+    def write(self):
+    
+        Packages_file = open(self.path, "w")
+        
+        for package in self.packages.values():
+            Packages_file.write(package.packages_text() + "\n")
+        
+        Packages_file.write("\n")
+        Packages_file.close()
+    
+    def find(self, name):
+    
+        try:
+            return self.packages[name]
+        except KeyError:
+            return None
+
+class Source(PackageFile):
 
     suffix = ".dsc"
     
@@ -97,6 +221,11 @@ class Source:
     
         self._get_info()
         return "<Source %s %s>" % (self.path, self._info)
+    
+    def __getitem__(self, key):
+    
+        self._get_info()
+        return self._info[key]
     
     def _get_info(self):
     
@@ -118,34 +247,11 @@ class Source:
         else:
             lines = [first_line] + f.readlines()
         
-        previous = None
-        for line in lines:
-        
-            # Keep each line for situations where the source text is required.
-            self.lines.append(line)
-            
-            if line == "\n":
-                pass
-            
-            elif not line.startswith(" "):
-                at = line.find(":")
-                heading = line[:at]
-                value = line[at+1:].strip()
-                if value == "":
-                    self._info[heading] = []
-                else:
-                    self._info[heading] = value
-                
-                previous = heading
-                self._headings.append(heading)
-            
-            elif previous:
-                if isinstance(self._info[previous], list):
-                    self._info[previous].append(line.strip())
-                else:
-                    self._info[previous] += line.rstrip()
-        
-        self._has_info = True
+        for info, headings, lines in self._read_entry(lines):
+            self._info = info
+            self._headings = headings
+            self.lines += lines
+            self._has_info = True
     
     def sources_text(self):
     
@@ -208,12 +314,13 @@ class Source:
         
         return None
     
-    def original_archive_name(self):
+    def original_archive_names(self):
     
         self._get_info()
         
         version = self._info["Version"].split(":")[-1].split("-")[0]
-        return self._info["Source"] + "_" + version + ".orig.tar.gz"
+        for suffix in ".orig.tar.gz", ".orig.tar.bz2":
+            yield self._info["Source"] + "_" + version + suffix
     
     def diff_archive_name(self):
     
@@ -221,7 +328,53 @@ class Source:
         
         version = self._info["Version"].split(":")[-1]
         return self._info["Source"] + "_" + version + ".diff.gz"
+
+class Sources(PackageFile):
+
+    def __init__(self, path):
+    
+        self.path = path
+        self.repo_path = os.sep.join(self.path.split(os.sep)[:-5])
+        self.sources = {}
+    
+    def add_source(self, source):
+    
+        self.sources[source["Source"]] = source
+    
+    def read(self):
+    
+        self.sources = {}
+        self.lines = []
         
+        for info, headings, lines in self._read_entry(open(self.path).readlines()):
+        
+            try:
+                dsc = filter(lambda i: i.endswith(".dsc"), info["Files"])[0].split()[-1]
+            except (KeyError, IndexError):
+                if info.has_key("Package"):
+                    sys.stderr.write("Failed to find a dsc file for package: %s\n" % info["Package"])
+            
+            path = os.path.join(self.repo_path, info["Directory"], dsc)
+            self.add_source(Source(path))
+            
+            self.lines += lines
+    
+    def write(self):
+    
+        Sources_file = open(self.path, "w")
+
+        for source in self.sources.values():
+            Sources_file.write(source.sources_text() + "\n")
+        
+        Sources_file.close()
+    
+    def find(self, name):
+    
+        try:
+            return self.sources[name]
+        except KeyError:
+            return None
+
 
 def mkdir(path):
 
@@ -255,6 +408,12 @@ def link_file(src_path, dest_path):
     os.symlink(os.path.abspath(src_path),
                os.path.abspath(dest_path))
 
+def remove_file(path):
+
+    if os.path.exists(path):
+        print "Removing", path
+        os.remove(path)
+
 def subdirectories(path):
 
     for child in os.listdir(path):
@@ -262,49 +421,32 @@ def subdirectories(path):
         if os.path.isdir(child_path):
             yield child_path
 
+def find_files(path, FileClass):
+
+    for obj in os.listdir(path):
+    
+        obj_path = os.path.join(path, obj)
+        if os.path.isdir(obj_path):
+            for child in find_files(obj_path, FileClass):
+                yield child
+        elif obj_path.endswith(FileClass.suffix):
+            yield FileClass(path = obj_path)
+
+
 def catalogue_packages(path, root_path):
 
     packages = glob.glob(os.path.join(path, "*", "*.deb"))
-    package_info_list = []
-    
-    for package in packages:
-    
-        info = {}
-        
-        s = subprocess.Popen(["dpkg-deb", "-I", package, "control"], stdout=subprocess.PIPE)
-        info["control"] = s.stdout.read()
-        
-        pieces = package.split(os.sep)
-        info["filename"] = "Filename: " + os.sep.join(pieces[-6:]) + "\n"
-        
-        size = os.stat(package)[stat.ST_SIZE]
-        info["size"] = "Size: %i\n" % size
-        
-        info["hashes"] = ""
-        for name, command in hashes:
-        
-            s = subprocess.Popen([command, package], stdout=subprocess.PIPE)
-            result = s.stdout.read().strip().split()[0]
-            info["hashes"] += name + ": " + result + "\n"
-        
-        package_info_list.append(info)
-    
-    return packages, package_info_list
+    return map(lambda p: Package(path = p), packages)
 
-def write_catalogue_package_file(component, architecture, path, package_info_list):
+def write_catalogue_package_file(component, architecture, path, packages):
 
     Packages_path = os.path.join(path, "Packages")
-    Packages_file = open(Packages_path, "w")
+    Packages_obj = Packages(Packages_path)
     
-    for info in package_info_list:
+    for package in packages:
+        Packages_obj.add_package(package)
     
-        for key in "control", "filename", "size", "hashes":
-            Packages_file.write(info[key])
-        
-        Packages_file.write("\n")
-    
-    Packages_file.close()
-    
+    Packages_obj.write()
     compressed_files = compress_files(Packages_path, Packages_compression)
     
     suite = path.split(os.sep)[-3]
@@ -312,25 +454,26 @@ def write_catalogue_package_file(component, architecture, path, package_info_lis
     
     return [Packages_path, Release_path] + compressed_files
 
-def catalogue_sources(path, root_path, component):
+def catalogue_sources(path, root_path):
+
+    sources = glob.glob(os.path.join(path, "*", "*.dsc"))
+    return map(lambda s: Source(s), sources)
+
+def write_catalogue_sources_file(path, root_path, component, sources):
 
     Sources_path = os.path.join(path, "Sources")
-    Sources_file = open(Sources_path, "w")
-    sources = glob.glob(os.path.join(path, "*", "*.dsc"))
+    Sources_obj = Sources(Sources_path)
     
-    for source_path in sources:
+    for source in sources:
+        Sources_obj.add_source(source)
     
-        source = Source(source_path)
-        Sources_file.write(source.sources_text() + "\n")
-    
-    Sources_file.close()
-    
+    Sources_obj.write()
     compressed_files = compress_files(Sources_path, Sources_compression)
     
     suite = path.split(os.sep)[-3]
     Release_path = write_component_release(path, suite, component, "source")
     
-    return sources, [Sources_path, Release_path] + compressed_files, ["source"]
+    return Sources_obj.sources.values(), [Sources_path, Release_path] + compressed_files, ["source"]
 
 def compress_files(path, compression_types):
 
@@ -428,17 +571,6 @@ def create_repo(path, suites, components):
 
 # Add packages and sources
 
-def find_files(path, FileClass):
-
-    for obj in os.listdir(path):
-    
-        obj_path = os.path.join(path, obj)
-        if os.path.isdir(obj_path):
-            for child in find_files(obj_path, FileClass):
-                yield child
-        elif obj_path.endswith(FileClass.suffix):
-            yield FileClass(obj_path)
-
 def add_package(package, path, link = False):
 
     architecture = package.architecture()
@@ -446,7 +578,7 @@ def add_package(package, path, link = False):
     
     dest_dir = os.path.join(path, "binary-" + architecture, section)
     mkdirs([path, "binary-" + architecture, section])
-    dest_path = os.path.join(dest_dir, package.file_name)
+    dest_path = os.path.join(dest_dir, os.path.split(package["Filename"])[1])
     if link:
         link_file(package.path, dest_path)
     else:
@@ -463,12 +595,18 @@ def add_source(source, path, link = False):
     source_file_missing = False
     
     source_dir_path = os.path.split(source.path)[0]
+    orig_names = []
     
-    orig_name = source.original_archive_name()
-    orig_path = os.path.join(source_dir_path, orig_name)
+    for orig_name in source.original_archive_names():
     
-    if not os.path.exists(orig_path):
-        sys.stderr.write("Failed to find original archive: %s\n" % orig_path)
+        orig_path = os.path.join(source_dir_path, orig_name)
+        
+        if os.path.exists(orig_path):
+            break
+        else:
+            orig_names.append(orig_name)
+    else:
+        sys.stderr.write("Failed to find any original archive: %s\n" % ",".join(orig_names))
         source_file_missing = True
     
     diff_name = source.diff_archive_name()
@@ -514,10 +652,94 @@ def add_packages_and_sources(path, dir_paths, link = False):
     
     return 0
 
+# Remove packages and sources
+
+def remove_packages_and_sources(component_path, names):
+
+    names = set(names)
+    
+    # Examine the different architectures available.
+    
+    catalogues = {}
+    
+    for arch in os.listdir(component_path):
+    
+        arch_path = os.path.join(component_path, arch)
+        
+        if arch == "source":
+            Sources_obj = Sources(os.path.join(arch_path, "Sources"))
+            Sources_obj.read()
+            catalogues[arch] = Sources_obj
+        else:
+            Packages_obj = Packages(os.path.join(arch_path, "Packages"))
+            Packages_obj.read()
+            catalogues[arch] = Packages_obj
+    
+    # Read the binary packages first to obtain all the source packages, then read
+    # the binary packages referred to by the source packages.
+    
+    sources = {}
+    packages = {}
+    source_names = set()
+    package_names = set()
+    
+    for arch in catalogues:
+    
+        if arch == "source":
+            continue
+        
+        for name in names:
+        
+            package = catalogues[arch].find(name)
+            if package:
+                packages[name] = package
+                source_names.add(package["Source"])
+    
+    # Read the source packages. Note that the original list of names may
+    # contain source package names.
+    
+    if "source" in catalogues:
+    
+        for name in source_names.union(names):
+        
+            source = catalogues["source"].find(name)
+            if source:
+                sources[name] = source
+                for binary_name in map(lambda b: b.strip(), source["Binary"].split(",")):
+                    package_names.add(binary_name)
+    
+    # Find the packages corresponding to the newly found package names.
+    
+    for arch in catalogues:
+    
+        if arch == "source":
+            continue
+        
+        for name in package_names:
+        
+            package = catalogues[arch].find(name)
+            if package:
+                packages[name] = package
+    
+    if "source" in catalogues:
+    
+        for source in sources.values():
+            remove_file(source.path)
+            source_dir = os.path.split(source.path)[0]
+            for file_name in map(lambda n: n.strip().split()[-1], source["Files"]):
+                remove_file(os.path.join(source_dir, source.file_name))
+    
+    for package in packages.values():
+        remove_file(package.path)
+    
+    return 0
+
 # Update repository
 
 def update_tree(levels, parent_path, root_path = None, component = None, architecture = None):
 
+    # <repo>/dists/<suite>/<component>/<architecture>
+    
     if len(levels) == 0:
         root_path = parent_path
     
@@ -538,8 +760,14 @@ def update_tree(levels, parent_path, root_path = None, component = None, archite
         child_path = os.path.join(parent_path, "source")
         if "source" in subdirs and os.path.isdir(child_path):
             print "Entering", child_path
-            packages, files, architectures = catalogue_sources(child_path, root_path, component)
+            sources = catalogue_sources(child_path, root_path)
+            packages, files, architectures = write_catalogue_sources_file(child_path, root_path, component, sources)
             subdirs.remove("source")
+        
+        # Add a binary-i386 subdirectory if not present.
+        #if "binary-i386" not in subdirs:
+        #    os.mkdir(os.path.join(parent_path, "binary-i386"))
+        #    subdirs.append("binary-i386")
         
         for subdir in subdirs:
         
@@ -552,19 +780,19 @@ def update_tree(levels, parent_path, root_path = None, component = None, archite
             
             # In each architecture directory, catalogue all the section subdirectories.
             # In the source directory, catalogue the sources for the section instead.
-            new_packages, new_info = catalogue_packages(child_path, root_path)
+            new_packages = catalogue_packages(child_path, root_path)
             
             packages += new_packages
-            info_dict[architecture] = (child_path, new_info)
+            info_dict[architecture] = (child_path, new_packages)
         
         # Write the package files.
-        for architecture, (path, package_info_list) in info_dict.items():
+        for architecture, (path, new_packages) in info_dict.items():
         
             # Add the all entries to each of the package files for the architectures.
             if architecture != "all" and "all" in info_dict:
-                files += write_catalogue_package_file(component, architecture, path, package_info_list + info_dict["all"][1])
+                files += write_catalogue_package_file(component, architecture, path, new_packages + info_dict["all"][1])
             else:
-                files += write_catalogue_package_file(component, architecture, path, package_info_list)
+                files += write_catalogue_package_file(component, architecture, path, new_packages)
     
     else:
         for subdir in subdirs:
@@ -627,6 +855,7 @@ def sign_repo(root_path, suites):
 
 create_syntax = "create <repository root directory> <suites> <components>"
 add_syntax = "add <repository component directory> [--link] <package or source directory> ..."
+remove_syntax = "remove <repository component directory> <package name> ..."
 update_syntax = "update <repository root directory>"
 sign_syntax = "sign <repository root directory> <suites>"
 
@@ -662,6 +891,13 @@ if __name__ == "__main__":
             else:
                 sys.exit(add_packages_and_sources(sys.argv[2], sys.argv[3:], False))
         
+        elif command == "remove":
+            if len(sys.argv) < 3:
+                sys.stderr.write("Usage: %s %s\n" % (sys.argv[0], remove_syntax))
+                sys.exit(1)
+            
+            sys.exit(remove_packages_and_sources(sys.argv[2], sys.argv[3:]))
+        
         elif command == "update":
             if len(sys.argv) != 3:
                 sys.stderr.write("Usage: %s %s\n" % (sys.argv[0], update_syntax))
@@ -680,6 +916,7 @@ if __name__ == "__main__":
     this_file = os.path.split(sys.argv[0])[1]
     sys.stderr.write("Usage: %s %s\n" % (this_file, create_syntax))
     sys.stderr.write("       %s %s\n" % (this_file, add_syntax))
+    sys.stderr.write("       %s %s\n" % (this_file, remove_syntax))
     sys.stderr.write("       %s %s\n" % (this_file, update_syntax))
     sys.stderr.write("       %s %s\n" % (this_file, sign_syntax))
     sys.stderr.write("\n" + general_help)
