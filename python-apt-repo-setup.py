@@ -334,16 +334,25 @@ class Source(PackageFile):
     
         self._get_info()
         
-        version = self._info["Version"].split(":")[-1].split("-")[0]
-        for suffix in ".orig.tar.gz", ".orig.tar.bz2":
-            yield self._info["Source"] + "_" + version + suffix
+        files = map(lambda line: line.split()[-1], self._info["Files"])
+        names = []
+        
+        for name in files:
+            if ".orig." in name:
+                names.append(name)
+        
+        return names
     
     def diff_archive_name(self):
     
         self._get_info()
         
-        version = self._info["Version"].split(":")[-1]
-        return self._info["Source"] + "_" + version + ".diff.gz"
+        files = map(lambda line: line.split()[-1], self._info["Files"])
+        for name in files:
+            if ".diff." in name:
+                return name
+        
+        return None
 
 class Sources(PackageFile):
 
@@ -633,11 +642,13 @@ def add_source(source, path, link = False):
         source_file_missing = True
     
     diff_name = source.diff_archive_name()
-    diff_path = os.path.join(source_dir_path, diff_name)
     
-    if not os.path.exists(diff_path):
-        sys.stderr.write("Failed to find diff archive: %s\n" % diff_path)
-        source_file_missing = True
+    if diff_name:
+        diff_path = os.path.join(source_dir_path, diff_name)
+        
+        if not os.path.exists(diff_path):
+            sys.stderr.write("Failed to find diff archive: %s\n" % diff_path)
+            source_file_missing = True
     
     if source_file_missing:
         return
@@ -659,10 +670,11 @@ def add_source(source, path, link = False):
         copy_file(orig_path, os.path.join(dest_dir, orig_name))
     
     # Copy the diff archive, if present.
-    if link:
-        link_file(diff_path, os.path.join(dest_dir, diff_name))
-    else:
-        copy_file(diff_path, os.path.join(dest_dir, diff_name))
+    if diff_name:
+        if link:
+            link_file(diff_path, os.path.join(dest_dir, diff_name))
+        else:
+            copy_file(diff_path, os.path.join(dest_dir, diff_name))
 
 def add_packages_and_sources(path, file_paths, link = False):
 
