@@ -1,4 +1,11 @@
-python-apt-repo (0.1.0) unstable; urgency=low
+python-apt-repo (0.2.0-1) unstable; urgency=low
+
+  * Added a remove command.
+  * Changed the meaning of the package arguments to the add command.
+
+ -- David Boddie <david.boddie@met.no>  Tue, 07 May 2013 16:22:40 +0200
+
+python-apt-repo (0.1.0-1) unstable; urgency=low
 
   * Initial release of a collection of tools for creating apt repositories.
 

@@ -1,0 +1,12 @@
+Source: python-apt-repo
+Maintainer: David Boddie <david.boddie@met.no>
+Section: python
+Priority: optional
+Build-Depends: python-all (>= 2.6.6-3), debhelper (>= 7.4.3)
+Standards-Version: 3.9.1
+
+Package: python-apt-repo
+Architecture: all
+Depends: ${misc:Depends}, ${python:Depends}
+Description: Tool for creating and updating apt repositories.
+
