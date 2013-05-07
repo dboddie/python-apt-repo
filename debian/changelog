@@ -1,0 +1,5 @@
+python-apt-repo (0.1.0) unstable; urgency=low
+
+  * Initial release of a collection of tools for creating apt repositories.
+
+ -- David Boddie <david.boddie@met.no>  Tue, 26 Mar 2013 14:57:54 +0100
