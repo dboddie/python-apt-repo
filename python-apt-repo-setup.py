@@ -448,6 +448,13 @@ def find_files(path, FileClass):
         elif obj_path.endswith(FileClass.suffix):
             yield FileClass(path = obj_path)
 
+def find_files_from_pattern(pattern, FileClass):
+
+    for obj_path in glob.glob(pattern):
+    
+        if os.path.isfile(obj_path) and obj_path.endswith(FileClass.suffix):
+            yield FileClass(path = obj_path)
+
 
 def catalogue_packages(path, root_path):
 
@@ -657,13 +664,16 @@ def add_source(source, path, link = False):
     else:
         copy_file(diff_path, os.path.join(dest_dir, diff_name))
 
-def add_packages_and_sources(path, dir_paths, link = False):
+def add_packages_and_sources(path, file_paths, link = False):
 
-    for dir_path in dir_paths:
+    for file_path in file_paths:
     
-        for package in find_files(dir_path, Package):
+        for package in find_files_from_pattern(file_path, Package):
             add_package(package, path, link)
-        for source in find_files(dir_path, Source):
+    
+    for file_path in file_paths:
+    
+        for source in find_files_from_pattern(file_path, Source):
             add_source(source, path, link)
     
     return 0
@@ -870,7 +880,7 @@ def sign_repo(root_path, suites):
     return 0
 
 create_syntax = "create <repository root directory> <suites> <components>"
-add_syntax = "add <repository component directory> [--link] <package or source directory> ..."
+add_syntax = "add <repository component directory> [--link] <package or source file> ..."
 remove_syntax = "remove <repository component directory> <package name> ..."
 update_syntax = "update <repository root directory>"
 sign_syntax = "sign <repository root directory> <suites>"
