@@ -731,7 +731,10 @@ def remove_packages_and_sources(component_path, names):
             package = catalogues[arch].find(name)
             if package:
                 packages[name] = package
-                source_names.add(package["Source"])
+                try:
+                    source_names.add(package["Source"])
+                except KeyError:
+                    pass
     
     # Read the source packages. Note that the original list of names may
     # contain source package names.
@@ -765,7 +768,7 @@ def remove_packages_and_sources(component_path, names):
             remove_file(source.path)
             source_dir = os.path.split(source.path)[0]
             for file_name in map(lambda n: n.strip().split()[-1], source["Files"]):
-                remove_file(os.path.join(source_dir, source.file_name))
+                remove_file(os.path.join(source_dir, file_name))
     
     for package in packages.values():
         remove_file(package.path)
