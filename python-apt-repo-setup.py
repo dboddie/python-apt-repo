@@ -183,7 +183,8 @@ class Packages(PackageFile):
     
     def add_package(self, package):
     
-        self.packages[package["Package"]] = package
+        packages = self.packages.setdefault(package["Package"], {})
+        packages[package["Version"]] = package
     
     def read(self):
     
@@ -207,8 +208,9 @@ class Packages(PackageFile):
     
         Packages_file = open(self.path, "w")
         
-        for package in self.packages.values():
-            Packages_file.write(package.packages_text() + "\n")
+        for package_versions_dict in self.packages.values():
+            for package in package_versions_dict.values():
+                Packages_file.write(package.packages_text() + "\n")
         
         Packages_file.write("\n")
         Packages_file.close()
@@ -216,7 +218,7 @@ class Packages(PackageFile):
     def find(self, name):
     
         try:
-            return self.packages[name]
+            return self.packages[name].values()
         except KeyError:
             return None
 
@@ -728,8 +730,8 @@ def remove_packages_and_sources(component_path, names):
         
         for name in names:
         
-            package = catalogues[arch].find(name)
-            if package:
+            for package in catalogues[arch].find(name):
+            
                 packages[name] = package
                 try:
                     source_names.add(package["Source"])
@@ -758,8 +760,8 @@ def remove_packages_and_sources(component_path, names):
         
         for name in package_names:
         
-            package = catalogues[arch].find(name)
-            if package:
+            for package in catalogues[arch].find(name):
+            
                 packages[name] = package
     
     if "source" in catalogues:
