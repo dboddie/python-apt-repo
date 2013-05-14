@@ -220,7 +220,7 @@ class Packages(PackageFile):
         try:
             return self.packages[name].values()
         except KeyError:
-            return None
+            return []
 
 class Source(PackageFile):
 
@@ -400,7 +400,7 @@ class Sources(PackageFile):
         try:
             return self.sources[name]
         except KeyError:
-            return None
+            return []
 
 
 def mkdir(path):
