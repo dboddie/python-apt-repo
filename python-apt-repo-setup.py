@@ -44,6 +44,11 @@ checksums = {"Files": "md5sum", "Checksums-Sha1": "sha1sum", "Checksums-Sha256":
 Packages_compression = [("gz", gzip.GzipFile), ("bz2", bz2.BZ2File)]
 Sources_compression = [("gz", gzip.GzipFile), ("bz2", bz2.BZ2File)]
 
+# apt-get expects to find architecture-specific subdirectories in each component directory.
+# We define some default ones to ensure that repositories work straight away even if they
+# do not contain packages for those architectures.
+default_architectures = ["sources", "binary-all", "binary-i386", "binary-amd64"]
+
 class PackageFile:
 
     def _read_entry(self, lines):
@@ -600,7 +605,7 @@ def create_repo(path, suites, components):
 
     mkdir(path)
     
-    create_tree(["dists", suites, components], path)
+    create_tree(["dists", suites, components, default_architectures], path)
     return 0
 
 # Add packages and sources
