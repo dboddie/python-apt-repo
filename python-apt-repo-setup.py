@@ -47,7 +47,7 @@ Sources_compression = [("gz", gzip.GzipFile), ("bz2", bz2.BZ2File)]
 # apt-get expects to find architecture-specific subdirectories in each component directory.
 # We define some default ones to ensure that repositories work straight away even if they
 # do not contain packages for those architectures.
-default_architectures = ["sources", "binary-all", "binary-i386", "binary-amd64"]
+default_architectures = ["source", "binary-all", "binary-i386", "binary-amd64"]
 
 class PackageFile:
 
