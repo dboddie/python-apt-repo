@@ -645,7 +645,7 @@ def add_source(source, path, link = False):
         else:
             orig_names.append(orig_name)
     else:
-        sys.stderr.write("Failed to find any original archive: %s\n" % ",".join(source.original_archive_names()))
+        sys.stderr.write("Failed to find any original archive for source '%s' in the following: %s\n" % (source.path, ",".join(source.original_archive_names())))
         source_file_missing = True
     
     diff_name = source.diff_archive_name()
