@@ -320,6 +320,11 @@ class Source(PackageFile):
     
         self._get_info()
         
+        for line in self._info["Package-List"]:
+        
+            name, pkg_type, section, priority = line.split()
+            return section
+        
         for binary in self._info["Binary"].split(","):
         
             version = self._info["Version"].split(":")[-1]
@@ -623,11 +628,11 @@ def add_package(package, path, link = False):
     else:
         copy_file(package.path, dest_path)
 
-def add_source(source, path, link = False):
+def add_source(source, path, link = False, source_only = False):
 
     section = source.find_section(path)
     
-    if not section:
+    if not section and not source_only:
         sys.stderr.write("Failed to find a binary package for source: %s\n" % source.path)
         return
     
@@ -683,17 +688,17 @@ def add_source(source, path, link = False):
         else:
             copy_file(diff_path, os.path.join(dest_dir, diff_name))
 
-def add_packages_and_sources(path, file_paths, link = False):
+def add_packages_and_sources(path, file_paths, link = False, source_only = False):
 
     for file_path in file_paths:
     
         for package in find_files_from_pattern(file_path, Package):
-            add_package(package, path, link)
+            add_package(package, path, link = link)
     
     for file_path in file_paths:
     
         for source in find_files_from_pattern(file_path, Source):
-            add_source(source, path, link)
+            add_source(source, path, link = link, source_only = source_only)
     
     return 0
 
@@ -902,7 +907,7 @@ def sign_repo(root_path, suites):
     return 0
 
 create_syntax = "create <repository root directory> <suites> <components>"
-add_syntax = "add <repository component directory> [--link] <package or source file> ..."
+add_syntax = "add <repository component directory> [--link] [--source-only] <package or source file> ..."
 remove_syntax = "remove <repository component directory> <package name> ..."
 update_syntax = "update <repository root directory>"
 sign_syntax = "sign <repository root directory> <suites>"
@@ -930,14 +935,23 @@ if __name__ == "__main__":
             sys.exit(create_repo(sys.argv[2], suites, components))
         
         elif command == "add":
-            if len(sys.argv) < 4:
+        
+            argv = sys.argv[:]
+            link = False
+            source_only = False
+            
+            while len(argv) > 3 and argv[3].startswith("--"):
+                if argv[3] == "--link":
+                    link = True
+                elif argv[3] == "--source-only":
+                    source_only = True
+                del argv[3]
+            
+            if len(argv) < 4:
                 sys.stderr.write("Usage: %s %s\n" % (sys.argv[0], add_syntax))
                 sys.exit(1)
             
-            if sys.argv[3] == "--link":
-                sys.exit(add_packages_and_sources(sys.argv[2], sys.argv[4:], True))
-            else:
-                sys.exit(add_packages_and_sources(sys.argv[2], sys.argv[3:], False))
+            sys.exit(add_packages_and_sources(argv[2], argv[3:], link = link, source_only = source_only))
         
         elif command == "remove":
             if len(sys.argv) < 3:
